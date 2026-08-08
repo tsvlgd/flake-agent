@@ -1,0 +1,31 @@
+{
+  "action": "completed",
+  "workflow_run": {
+    "id": 482910384,
+    "name": "CI Pipeline",
+    "head_branch": "main",
+    "head_sha": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+    "status": "completed",
+    "conclusion": "failure",
+    "html_url": "https://github.com/my-org/my-awesome-app/actions/runs/482910384",
+    "repository": {
+      "id": 123456789,
+      "name": "my-awesome-app",
+      "full_name": "my-org/my-awesome-app",
+      "owner": {
+        "login": "my-org"
+      }
+    },
+    "head_commit": {
+      "message": "feat: add new database connection pooling",
+      "author": {
+        "name": "dev-engineer",
+        "email": "dev@my-org.io"
+      }
+    },
+    "created_at": "2026-08-08T07:30:00Z",
+    "updated_at": "2026-08-08T07:35:44Z",
+    "run_attempt": 1,
+    "mock_local_log": "github_actions_run.log"
+  }
+}

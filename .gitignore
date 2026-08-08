@@ -1,0 +1,5 @@
+docs/*
+.venv
+venv
+.env
+simulations/event-driven/architecture_blueprint.md            
