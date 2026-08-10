@@ -1,0 +1,241 @@
+[+0910s] ok 25 |030| podman run --log-driver in 10602ms
+[+0910s] ok 26 |030| podman run --log-driver journald in 1725ms
+[+0910s] ok 27 |030| podman run --tz in 3738ms
+[+0910s] ok 28 |030| podman run --tz with zoneinfo in 6687ms
+[+0910s] ok 29 |030| podman run : full path to --runtime is preserved in 3602ms
+[+0910s] ok 30 |030| podman --noout run should not print output in 1663ms
+[+0910s] ok 31 |030| podman --noout create should not print output in 1133ms
+[+0910s] ok 32 |030| podman --out run should save the container id in 2282ms
+[+0910s] ok 33 |030| podman --out create should save the container id in 1748ms
+[+0910s] ok 34 |030| podman run : look up correct image name in 3851ms
+[+0910s] ok 35 |030| podman inspect includes image data in 3183ms
+[+0910s] ok 36 |030| Verify /run/.containerenv exist in 8032ms
+[+0910s] ok 37 |030| podman run with --net=host and --port prints warning in 1632ms
+[+0910s] ok 38 |030| podman run with --net=none and --port prints warning in 2092ms
+[+0910s] ok 39 |030| podman run with --net=container:id and --port prints warning in 
+
+[+0923s] ok 396 |505| UDP port range forwarding, IPv6, tap in 4902ms
+[+0923s] ok 397 |505| UDP port range forwarding, IPv6, loopback in 2681ms
+[+0923s] ok 398 |505| Translated UDP port forwarding, IPv6, tap in 4462ms
+[+0923s] ok 399 |505| Translated UDP port forwarding, IPv6, loopback in 1990ms
+[+0923s] ok 400 |505| UDP translated port range forwarding, IPv6, tap in 4807ms
+[+0923s] ok 401 |505| UDP translated port range forwarding, IPv6, loopback in 3029ms
+[+0923s] ok 402 |505| Address-bound UDP port forwarding, IPv6, tap in 5064ms
+[+0923s] ok 403 |505| Address-bound UDP port forwarding, IPv6, loopback in 2045ms
+[+0923s] ok 404 |505| Interface-bound UDP port forwarding, IPv6, tap in 4870ms
+[+0923s] ok 405 |505| Interface-bound UDP port forwarding, IPv6, loopback in 1824ms
+[+0923s] ok 406 |505| TCP/IPv4 small transfer, tap in 2821ms
+[+0923s] ok 407 |505| TCP/IPv4 small transfer, loopback in 3001ms
+[+0923s] ok 408 |505| TCP/IPv4 large transfer, tap in 3330ms
+[+0923s] ok 409 |505| TCP/IPv4 large transfer, loopback in 3770ms
+[+0923s] ok 410 |505| TCP/IPv6 small transfer, tap in 4328ms
+[+0923s] ok 411 |505| TCP/IPv6 small transfer, loopback in 2771ms
+[+0923s] ok 412 |505| TCP/IPv6 large transfer, tap in 6200ms
+[+0923s] ok 413 |505| TCP/IPv6 large transfer, loopback in 3472ms
+[+0923s] ok 414 |505| UDP/IPv4 small transfer, tap in 3964ms
+[+0923s] ok 415 |505| UDP/IPv4 small transfer, loopback in 3781ms
+[+0923s] ok 416 |505| UDP/IPv4 large transfer, tap in 2894ms
+[+0923s] ok 417 |505| UDP/IPv4 large transfer, loopback in 2767ms
+[+0923s] ok 418 |505| UDP/IPv6 small transfer, tap in 5282ms
+[+0923s] ok 419 |505| UDP/IPv6 small transfer, loopback in 2947ms
+[+0923s] ok 420 |505| UDP/IPv6 large transfer, tap in 4632ms
+[+0923s] ok 421 |505| UDP/IPv6 large transfer, loopback in 3032ms
+[+0923s] ok 422 |505| pasta(1) quits when the namespace is gone in 1203ms
+[+0923s] ok 423 |505| Unsupported protocol in port forwarding in 693ms
+[+0923s] ok 424 |505| Use options from containers.conf in 2072ms
+[+0923s] ok 425 |505| pasta/bridge and host.containers.internal in 2138ms
+[+0923s] ok 426 podman checkpoint - basic test in 27ms # skip checkpoint does not work rootless
+[+0923s] ok 427 podman checkpoint --export, with volumes in 19ms # skip checkpoint does not work rootless
+[+0923s] ok 428 podman checkpoint --file-locks in 27ms # skip checkpoint does not work rootless
+[+0923s] ok 429 podman checkpoint/restore ip and mac handling in 25ms # skip checkpoint does not work rootless
+[+0975s] ok 430 |600| podman shell completion test in 181585ms
+[+0975s] ok 431 |600| podman shell completion for paths in container/image in 4768ms
+[+0975s] ok 432 |600| podman run --sysctl completion for sysctl in 516ms
+[+0975s] ok 433 |610| check Go template formatting in 59546ms
+[+0975s] ok 434 |620| options that cannot be set together in 7495ms
+[+0975s] ok 435 |700| podman kube with stdin in 3125ms
+[+0975s] ok 436 |700| podman play in 3563ms
+[+0975s] ok 437 |700| podman play --service-container in 8193ms
+[+0975s] ok 438 |700| podman kube --network in 6989ms
+[+0975s] ok 439 |700| podman kube play read-only in 7936ms
+[+0975s] ok 440 |700| podman kube play read-only from containers.conf in 9729ms
+[+0975s] ok 441 |700| podman play with user from image in 4142ms
+[+0975s] ok 442 |700| podman kube play --replace external storage in 7773ms
+[+0975s] ok 443 |700| podman kube --annotation in 2889ms
+[+0975s] ok 444 |700| podman play Yaml deprecated --no-trunc annotation in 494ms # skip FIXME: I can't figure out what this test is supposed to do
+[+0975s] ok 445 |700| podman kube play - default log driver in 3142ms
+[+0975s] ok 446 |700| podman kube play - URL in 4013ms
+[+0975s] ok 447 |700| podman play with init container in 2863ms
+[+0975s] ok 448 |700| podman kube play - hostport in 3368ms
+[+0975s] ok 449 |700| podman kube play - multi-pod YAML in 4200ms
+[+0975s] ok 450 |700| podman kube generate filetype in 4002ms
+[+0975s] ok 451 |700| podman kube play --wait with siginterrupt in 5217ms
+[+0975s] ok 452 |700| podman kube play --wait - wait for pod to exit in 3160ms
+[+0975s] ok 453 |700| podman kube play with configmaps in 2625ms
+[+0975s] ok 454 |700| podman kube with --authfile=/tmp/bogus in 663ms
+[+0975s] ok 455 |700| podman kube play with umask from containers.conf in 4622ms
+[+0975s] ok 456 |700| podman kube generate tmpfs on /tmp in 4777ms
+[+0975s] ok 457 |700| podman kube play - pull policy in 5555ms
+[+0975s] ok 458 |700| podman kube play healthcheck should wait initialDelaySeconds before updating status in 35225ms
+[+0975s] ok 459 |700| podman kube play healthcheck should wait initialDelaySeconds before executing healthcheck in 4512ms
+[+0975s] ok 460 |700| podman play with image volume (automount annotation and OCI VolumeSource) in 17701ms
+[+0975s] ok 461 |700| podman play with image volume pull policies in 27105ms
+[+0975s] ok 462 |700| podman kube play - publish with default_host_ips in 3329ms
+[+0975s] ok 463 |710| podman kube generate - usage message in 1104ms
+[+0975s] ok 464 |710| podman kube generate - container in 2768ms
+[+0975s] ok 465 |710| podman kube generate unmasked in 4666ms
+[+0975s] ok 466 |710| podman kube generate volumes in 1908ms
+[+0975s] ok 467 |710| podman kube generate - pod in 3828ms
+[+0975s] ok 468 |710| podman kube generate - deployment in 2829ms
+[+0975s] ok 469 |710| podman kube generate - job in 3388ms
+[+0975s] make: *** [Makefile:735: localsystem] Error 1
+[08:58:15] END - [+0975s] total duration since 2026-08-09T08:58:15Z
+
+Failed tests (1):
+ - 212 |220| podman healthcheck in 15645ms
+Collecting logs
+time="2026-08-09T08:58:16Z" level=info msg="Sending SIGKILL to the qemu driver process 2982"
+time="2026-08-09T08:58:16Z" level=info msg="Sending SIGKILL to the host agent process 2955"
+time="2026-08-09T08:58:16Z" level=info msg="Removing *.pid *.sock *.tmp under \"/home/ubuntu/.lima/podman-ci\""
+time="2026-08-09T08:58:16Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/ha.pid\""
+time="2026-08-09T08:58:16Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/ha.sock\""
+time="2026-08-09T08:58:16Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/qemu.pid\""
+time="2026-08-09T08:58:16Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/qmp.sock\""
+time="2026-08-09T08:58:16Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/serial.sock\""
+time="2026-08-09T08:58:16Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/serialv.sock\""
+time="2026-08-09T08:58:16Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/ssh.sock\""
+time="2026-08-09T08:58:16Z" level=info msg="Deleted \"podman-ci\" (\"/home/ubuntu/.lima/podman-ci\")"
+[+1201s] ok 354 |505| Basic nameserver lookup in 1935ms
+[+1201s] ok 355 |505| Default nameserver forwarding in 2021ms
+[+1201s] ok 356 |505| Custom DNS forward address, IPv4 in 2861ms
+[+1201s] ok 357 |505| Custom DNS forward address, IPv6 in 799ms # skip Currently unsupported
+[+1201s] ok 358 |505| Single TCP port forwarding, IPv4, tap in 4206ms
+[+1201s] ok 359 |505| Single TCP port forwarding, IPv4, loopback in 2735ms
+[+1201s] ok 360 |505| TCP port range forwarding, IPv4, tap in 4468ms
+[+1201s] ok 361 |505| TCP port range forwarding, IPv4, loopback in 4608ms
+[+1201s] ok 362 |505| Translated TCP port forwarding, IPv4, tap in 3492ms
+[+1201s] ok 363 |505| Translated TCP port forwarding, IPv4, loopback in 2598ms
+[+1201s] ok 364 |505| TCP translated port range forwarding, IPv4, tap in 5090ms
+[+1201s] ok 365 |505| TCP translated port range forwarding, IPv4, loopback in 5561ms
+[+1201s] ok 366 |505| Address-bound TCP port forwarding, IPv4, tap in 3534ms
+[+1201s] ok 367 |505| Address-bound TCP port forwarding, IPv4, loopback in 2258ms
+[+1201s] ok 368 |505| Interface-bound TCP port forwarding, IPv4, tap in 3627ms
+[+1201s] ok 369 |505| Interface-bound TCP port forwarding, IPv4, loopback in 3799ms
+[+1201s] ok 370 |505| Single TCP port forwarding, IPv6, tap in 5086ms
+[+1201s] ok 371 |505| Single TCP port forwarding, IPv6, loopback in 2805ms
+[+1201s] ok 372 |505| TCP port range forwarding, IPv6, tap in 5315ms
+[+1201s] ok 373 |505| TCP port range forwarding, IPv6, loopback in 2588ms
+[+1201s] ok 374 |505| Translated TCP port forwarding, IPv6, tap in 4704ms
+[+1201s] ok 375 |505| Translated TCP port forwarding, IPv6, loopback in 2731ms
+[+1201s] ok 376 |505| TCP translated port range forwarding, IPv6, tap in 6349ms
+[+1201s] ok 377 |505| TCP translated port range forwarding, IPv6, loopback in 3580ms
+[+1201s] ok 378 |505| Address-bound TCP port forwarding, IPv6, tap in 5107ms
+[+1201s] ok 379 |505| Address-bound TCP port forwarding, IPv6, loopback in 3761ms
+[+1201s] ok 380 |505| Interface-bound TCP port forwarding, IPv6, tap in 4658ms
+[+1201s] ok 381 |505| Interface-bound TCP port forwarding, IPv6, loopback in 3927ms
+[+1201s] ok 382 |505| Single UDP port forwarding, IPv4, tap in 4473ms
+[+1201s] ok 383 |505| Single UDP port forwarding, IPv4, loopback in 3571ms
+[+1201s] ok 384 |505| UDP port range forwarding, IPv4, tap in 4438ms
+[+1201s] ok 385 |505| UDP port range forwarding, IPv4, loopback in 4647ms
+[+1201s] ok 386 |505| Translated UDP port forwarding, IPv4, tap in 2488ms
+[+1201s] ok 387 |505| Translated UDP port forwarding, IPv4, loopback in 2750ms
+[+1201s] ok 388 |505| UDP translated port range forwarding, IPv4, tap in 4423ms
+[+1201s] ok 389 |505| UDP translated port range forwarding, IPv4, loopback in 5855ms
+[+1201s] ok 390 |505| Address-bound UDP port forwarding, IPv4, tap in 2783ms
+[+1201s] ok 391 |505| Address-bound UDP port forwarding, IPv4, loopback in 2988ms
+[+1201s] ok 392 |505| Interface-bound UDP port forwarding, IPv4, tap in 3289ms
+[+1201s] ok 393 |505| Interface-bound UDP port forwarding, IPv4, loopback in 2814ms
+[+1201s] ok 394 |505| Single UDP port forwarding, IPv6, tap in 4780ms
+[+1201s] ok 395 |505| Single UDP port forwarding, IPv6, loopback in 3572ms
+[+1201s] ok 396 |505| UDP port range forwarding, IPv6, tap in 6963ms
+[+1201s] ok 397 |505| UDP port range forwarding, IPv6, loopback in 3651ms
+[+1201s] ok 398 |505| Translated UDP port forwarding, IPv6, tap in 4356ms
+[+1201s] ok 399 |505| Translated UDP port forwarding, IPv6, loopback in 3097ms
+[+1201s] ok 400 |505| UDP translated port range forwarding, IPv6, tap in 5878ms
+[+1201s] ok 401 |505| UDP translated port range forwarding, IPv6, loopback in 4246ms
+[+1201s] ok 402 |505| Address-bound UDP port forwarding, IPv6, tap in 4738ms
+[+1201s] ok 403 |505| Address-bound UDP port forwarding, IPv6, loopback in 2611ms
+[+1201s] ok 404 |505| Interface-bound UDP port forwarding, IPv6, tap in 5250ms
+[+1201s] ok 405 |505| Interface-bound UDP port forwarding, IPv6, loopback in 2452ms
+[+1201s] ok 406 |505| TCP/IPv4 small transfer, tap in 4758ms
+[+1201s] ok 407 |505| TCP/IPv4 small transfer, loopback in 3835ms
+[+1201s] ok 408 |505| TCP/IPv4 large transfer, tap in 4989ms
+[+1201s] ok 409 |505| TCP/IPv4 large transfer, loopback in 4215ms
+[+1201s] ok 410 |505| TCP/IPv6 small transfer, tap in 6374ms
+[+1201s] ok 411 |505| TCP/IPv6 small transfer, loopback in 4429ms
+[+1201s] ok 412 |505| TCP/IPv6 large transfer, tap in 8506ms
+[+1201s] ok 413 |505| TCP/IPv6 large transfer, loopback in 4793ms
+[+1201s] ok 414 |505| UDP/IPv4 small transfer, tap in 3676ms
+[+1201s] ok 415 |505| UDP/IPv4 small transfer, loopback in 5888ms
+[+1201s] ok 416 |505| UDP/IPv4 large transfer, tap in 5166ms
+[+1201s] ok 417 |505| UDP/IPv4 large transfer, loopback in 5653ms
+[+1201s] ok 418 |505| UDP/IPv6 small transfer, tap in 6083ms
+[+1201s] ok 419 |505| UDP/IPv6 small transfer, loopback in 4409ms
+[+1201s] ok 420 |505| UDP/IPv6 large transfer, tap in 6562ms
+[+1201s] ok 421 |505| UDP/IPv6 large transfer, loopback in 4501ms
+[+1201s] ok 422 |505| pasta(1) quits when the namespace is gone in 2452ms
+[+1201s] ok 423 |505| Unsupported protocol in port forwarding in 1612ms
+[+1201s] ok 424 |505| Use options from containers.conf in 1829ms
+[+1201s] ok 425 |505| pasta/bridge and host.containers.internal in 2937ms
+[+1201s] ok 426 podman checkpoint - basic test in 30ms # skip checkpoint does not work rootless
+[+1201s] ok 427 podman checkpoint --export, with volumes in 28ms # skip checkpoint does not work rootless
+[+1201s] ok 428 podman checkpoint --file-locks in 30ms # skip checkpoint does not work rootless
+[+1201s] ok 429 podman checkpoint/restore ip and mac handling in 33ms # skip checkpoint does not work rootless
+[+1251s] ok 430 |600| podman shell completion test in 232397ms
+[+1251s] ok 431 |600| podman shell completion for paths in container/image in 7625ms
+[+1251s] ok 432 |600| podman run --sysctl completion for sysctl in 1934ms
+[+1251s] ok 433 |610| check Go template formatting in 65957ms
+[+1251s] ok 434 |620| options that cannot be set together in 7923ms
+[+1251s] ok 435 |700| podman kube with stdin in 4454ms
+[+1251s] ok 436 |700| podman play in 4108ms
+[+1251s] ok 437 |700| podman play --service-container in 9700ms
+[+1251s] ok 438 |700| podman kube --network in 7120ms
+[+1251s] ok 439 |700| podman kube play read-only in 10504ms
+[+1251s] ok 440 |700| podman kube play read-only from containers.conf in 10273ms
+[+1251s] ok 441 |700| podman play with user from image in 4146ms
+[+1251s] ok 442 |700| podman kube play --replace external storage in 9104ms
+[+1251s] ok 443 |700| podman kube --annotation in 3690ms
+[+1251s] ok 444 |700| podman play Yaml deprecated --no-trunc annotation in 1372ms # skip FIXME: I can't figure out what this test is supposed to do
+[+1251s] ok 445 |700| podman kube play - default log driver in 4734ms
+[+1251s] ok 446 |700| podman kube play - URL in 5482ms
+[+1251s] ok 447 |700| podman play with init container in 5578ms
+[+1251s] ok 448 |700| podman kube play - hostport in 4914ms
+[+1251s] ok 449 |700| podman kube play - multi-pod YAML in 6842ms
+[+1251s] ok 450 |700| podman kube generate filetype in 6396ms
+[+1251s] ok 451 |700| podman kube play --wait with siginterrupt in 10177ms
+[+1251s] ok 452 |700| podman kube play --wait - wait for pod to exit in 6211ms
+[+1251s] ok 453 |700| podman kube play with configmaps in 2123ms
+[+1251s] ok 454 |700| podman kube with --authfile=/tmp/bogus in 474ms
+[+1251s] ok 455 |700| podman kube play with umask from containers.conf in 4853ms
+[+1251s] ok 456 |700| podman kube generate tmpfs on /tmp in 3784ms
+[+1251s] ok 457 |700| podman kube play - pull policy in 4867ms
+[+1251s] ok 458 |700| podman kube play healthcheck should wait initialDelaySeconds before updating status in 40929ms
+[+1251s] ok 459 |700| podman kube play healthcheck should wait initialDelaySeconds before executing healthcheck in 4503ms
+[+1251s] ok 460 |700| podman play with image volume (automount annotation and OCI VolumeSource) in 27774ms
+[+1251s] ok 461 |700| podman play with image volume pull policies in 36895ms
+[+1251s] ok 462 |700| podman kube play - publish with default_host_ips in 4808ms
+[+1251s] ok 463 |710| podman kube generate - usage message in 925ms
+[+1251s] ok 464 |710| podman kube generate - container in 2376ms
+[+1251s] ok 465 |710| podman kube generate unmasked in 5691ms
+[+1251s] ok 466 |710| podman kube generate volumes in 2627ms
+[+1251s] ok 467 |710| podman kube generate - pod in 4851ms
+[+1251s] ok 468 |710| podman kube generate - deployment in 3702ms
+[+1251s] ok 469 |710| podman kube generate - job in 4185ms
+[+1252s] make: *** [Makefile:735: localsystem] Error 1
+[17:21:22] END - [+1252s] total duration since 2026-08-08T17:21:22Z
+
+Failed tests (1):
+ - 212 |220| podman healthcheck in 9038ms
+Collecting logs
+time="2026-08-08T17:21:23Z" level=info msg="Sending SIGKILL to the qemu driver process 2913"
+time="2026-08-08T17:21:23Z" level=info msg="Sending SIGKILL to the host agent process 2885"
+time="2026-08-08T17:21:23Z" level=info msg="Removing *.pid *.sock *.tmp under \"/home/ubuntu/.lima/podman-ci\""
+time="2026-08-08T17:21:23Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/ha.pid\""
+time="2026-08-08T17:21:23Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/ha.sock\""
+time="2026-08-08T17:21:23Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/qemu.pid\""
+time="2026-08-08T17:21:23Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/qmp.sock\""
+time="2026-08-08T17:21:23Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/serial.sock\""
+time="2026-08-08T17:21:23Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/serialv.sock\""
+time="2026-08-08T17:21:23Z" level=info msg="Removing \"/home/ubuntu/.lima/podman-ci/ssh.sock\""
+time="2026-08-08T17:21:23Z" level=info msg="Deleted \"podman-ci\" (\"/home/ubuntu/.lima/podman-ci\")"
+Error: Process completed with exit code 2.

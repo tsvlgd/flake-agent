@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flake-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["app"]
+
+[tool.setuptools.packages.find]
+include = ["app*", "simulations*"]
