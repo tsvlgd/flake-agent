@@ -21,17 +21,17 @@ A CI workflow runner log follows three distinct chronological phases:
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ PHASE 1: SETUP (~500 lines)                                            │
+│ PHASE 1: SETUP (~500 lines)                                             │
 │ Environment provisioning, dependency installation, container pulls.     │
 │ Signal-to-Noise Ratio: Low                                              │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ PHASE 2: TEST EXECUTION (~5,000 - 50,000 lines)                         │
-│ BATS suites, Go integration tests, unit benchmarks.                    │
+│ BATS suites, Go integration tests, unit benchmarks.                     │
 │ Signal-to-Noise Ratio: High (Root cause of failure lives here)          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ PHASE 3: TEARDOWN (~100 lines)                                          │
 │ Resource cleanup, socket teardown, process termination (SIGKILL).       │
-│ Signal-to-Noise Ratio: Near Zero (Misleading failure signatures)         │
+│ Signal-to-Noise Ratio: Near Zero (Misleading failure signatures)        │
 └─────────────────────────────────────────────────────────────────────────┘
 
 ```
