@@ -140,6 +140,37 @@ The microservice operates on an asynchronous, decoupled producer-consumer model 
 3. Signature-Based Heuristic Routing
 
 ```
+#### Phase 1 from raw stream reception to downstream payload generation:
+```text
+[ Raw Incoming Log Stream ]
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ STEP 1: Stream Sanitization & Header Stripping         │
+│ • Strip ANSI color escape codes (\x1b[32m...)          │
+│ • Strip ISO-8601 CI Runner prefixes                    │
+└────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ STEP 2: The Teardown Wall (Noise Elimination)          │
+│ • Locate cleanup anchors ("Collecting logs", SIGKILL)  │
+│ • Truncate everything below the anchor                 │
+└────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌────────────────────────────────────────────────────────┐
+│ STEP 3: Multi-Driver Cascading Router                  │
+│   Attempt 1: BATS Pattern Matcher                      │
+│   Attempt 2: Go / Ginkgo Test Pattern Matcher          │
+│   Attempt 3: Go Compiler Syntax Matcher                │
+│   Attempt 4: Infra / Host Level Fatal Matcher          │
+│   Attempt 5: [SAFETY NET] Generic Tail Window Fallback │
+└────────────────────────────────────────────────────────┘
+           │
+           ▼
+[ Output: Guaranteed Non-Null Sanitized Payload ]
+```
 
 ### 4.2 Test Framework Disambiguation Matrix
 
