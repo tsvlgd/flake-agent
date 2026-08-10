@@ -79,6 +79,40 @@ The microservice operates on an asynchronous, decoupled producer-consumer model 
 <img width="6659" height="3508" alt="image" src="https://github.com/user-attachments/assets/aa3bf51b-2c14-41e8-9362-c87e8c4889c5" />
 
 
+```text
+[ GitHub Cloud ]
+       │
+       ▼ (HTTP POST + HMAC Signature)
+┌─────────────────────────────────────────────────────────────────┐
+│ FASTAPI GATEWAY                                                 │
+│ • Validates HMAC Header                                         │
+│ • Returns Instant HTTP 200 OK                                   │
+│ • Buffers Event Metadata                                        │
+└─────────────────────────────────────────────────────────────────┘
+       │
+       ▼ (Thread Offload / Task Dispatch)
+┌─────────────────────────────────────────────────────────────────┐
+│ REDIS BROKER / CELERY WORKER                                    │
+│ • Checks local DB cache for run_id                              │
+│ • Hits GitHub API: GET /repos/{owner}/{repo}/actions/runs/{id} │
+│ • Downloads and extracts raw run log                            │
+└─────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ APPLICATION LAYER                                               │
+│ • Log Sanitizer Engine                                          │
+│ • Multi-Stage Triage Router                                     │
+│ • Diagnostic Evaluation Engine                                  │
+└─────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ PERMANENT INDEXING STORE                                        │
+│ Writes structured FlakeAnalysisReport to Database               │
+└─────────────────────────────────────────────────────────────────┘
+
+```
 ### Multi-Stage Persistence Pattern
 
 1. **Stage 1 (Ingestion Storage):** The raw webhook JSON payload is buffered in volatile key-value storage immediately upon receipt. If worker processes crash, the `run_id` and repository context remain recoverable.
