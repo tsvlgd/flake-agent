@@ -172,6 +172,28 @@ The microservice operates on an asynchronous, decoupled producer-consumer model 
 [ Output: Guaranteed Non-Null Sanitized Payload ]
 ```
 
+`outputs a clean, predictable, strongly-typed JSON structure:`
+
+```Json
+{
+  "status": "SUCCESS",
+  "parsing_strategy": "ATTEMPT_1_BATS_MATCH",
+  "payload": {
+    "failing_test_id": "212",
+    "failing_test_name": "podman healthcheck",
+    "duration_ms": 15645,
+    "makefile_target": "Makefile:735: localsystem",
+    "raw_context_window": "make: *** [Makefile:735: localsystem] Error 1\nFailed tests (1):\n - 212 |220| podman healthcheck in 15645ms"
+  },
+  "metrics": {
+    "raw_lines_received": 13,
+    "sanitized_lines_remaining": 6,
+    "noise_reduction_ratio": "53.8%"
+  }
+}
+```
+
+
 ### 4.2 Test Framework Disambiguation Matrix
 
 In Podman's codebase, tests are distributed across multiple subdirectories, but they execute via a small set of standardized runtime drivers. Routing logs by directory path alone is fragile; the pipeline routes by **console stdout/stderr output signatures**.
