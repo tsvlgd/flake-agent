@@ -507,9 +507,4 @@ volumes:
 
 ---
 
-## Appendix: Architectural Reference Diagrams
-
-![Microservice Architecture — Ingestion & Infrastructure](![alt text](image.png))
-![Full Pipeline — Ingestion through Application Layer](/home/mehfooj/Dev/workspace/flake-agent/assets/excalidraw-2.pngg)
-
-![Application Layer — Agentic Loop & Data Lineage](/home/mehfooj/Dev/workspace/flake-agent/assets/excalidraw-3.png)
+## Appendix: Architectural References
