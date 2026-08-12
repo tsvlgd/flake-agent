@@ -116,7 +116,7 @@ The microservice operates on an asynchronous, decoupled producer-consumer model 
 ### Multi-Stage Persistence Pattern
 
 1. **Stage 1 (Ingestion Storage):** The raw webhook JSON payload is buffered in volatile key-value storage immediately upon receipt. If worker processes crash, the `run_id` and repository context remain recoverable.
-2. **Stage 2 (Ephemeral Application Processing):** Log downloading, sanitization, and regex routing operate in-memory or in ephemeral temp volumes. Raw 50MB log files are discarded post-extraction to prevent disk bloat.
+2. **Stage 2 (Application Processing):** Log downloading, sanitization  store `Raw logs` [optionally cleaned] in high-speed local NVMe Docker volume attached to the Celery worker container, and regex routing.
 3. **Stage 3 (Permanent Indexing):** The final extracted `ParseResult` and structured analysis report are committed to persistent relational/document storage for historical flake trend analysis.
 
 ---
