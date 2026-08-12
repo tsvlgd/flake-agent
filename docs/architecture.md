@@ -92,7 +92,7 @@ UNKNOWN_FLAKE_AMBIGUOUS — circuit-breaker exhaustion, agent could not resolve
 └──────────────────────────────────────────────────────────────┘
 ```
 
-![High-Level System Flow](/home/mehfooj/Dev/workspace/flake-agent/assets/excalidraw-1.png)
+![High-Level System Flow](excalidraw-1.png)
 
 ---
 
