@@ -76,8 +76,7 @@ Designing an automated diagnostic pipeline for large-scale open-source infrastru
 
 The microservice operates on an asynchronous, decoupled producer-consumer model to handle non-blocking HTTP webhook ingestion from GitHub.
 
-<img width="6659" height="3508" alt="image" src="https://github.com/user-attachments/assets/aa3bf51b-2c14-41e8-9362-c87e8c4889c5" />
-
+![High-Level System Flow](docs/excalidraw-1.png)
 
 ```text
 [ GitHub Cloud ]
