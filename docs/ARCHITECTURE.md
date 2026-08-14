@@ -18,6 +18,8 @@ When a CI run fails, developers face two immediate issues:
 
 <img src="../assets/excalidraw-1.png" alt="System Architecture" width="100%">
 
+> **Note:** This architecture and its technical decisions are based on my research, design exploration, iterative reasoning, and prior experience. It should be considered a baseline rather than a finalized implementation; decisions may evolve phase-by-phase as requirements, practical findings, and mentor guidance shape the project.
+
 ### ***CORE Architectural decisions taken***
 
 #### log Ingestion Strategy  [Push-Based Webhooks over Active Polling]
