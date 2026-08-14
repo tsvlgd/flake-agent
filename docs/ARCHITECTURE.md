@@ -67,7 +67,7 @@ moreover
 +--------------------------------------------------------------------------------------------------+
 ```
 
-*see the core [decisions.md](../DECISIONS.md) !* 
+*see the core [decisions.md](./DECISIONS.md) !* 
 
 ---
 
@@ -456,7 +456,7 @@ To address the findings from the upstream pipeline audit, the system implements 
 
 ```yaml
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
-│                      CORE ARCHITECTURAL RATIONALE & COMMITMENTs                           │
+│                      CORE ARCHITECTURAL RATIONALE & COMMITMENTs                          │
 ├──────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                          │
 │  1. Out-of-Band Routing over Text Scanning                                               │
@@ -466,7 +466,7 @@ To address the findings from the upstream pipeline audit, the system implements 
 │                                                                                          │
 │  2. Deterministic Routing Cascades                                                       │
 │     The worker uses execution metadata to route the log stream directly into OS-specific │
-│     specific parsers (POSIX Bash Cascade vs. Windows PowerShell Cascade).                   │
+│     specific parsers (POSIX Bash Cascade vs. Windows PowerShell Cascade).                │
 │                                                                                          │
 │  3. Zero-Token / Minimal CPU Execution                                                   │
 │     Bypasses heavy LLM scanning or multi-pass regex matching over unverified streams.    │
