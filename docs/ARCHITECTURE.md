@@ -16,6 +16,8 @@ When a CI run fails, developers face two immediate issues:
 
 *The **Goal** of this architecture is to design a **microservice*** an asynchronous, event-driven system to be designed to capture, sanitize, parse, and analyze text execution logs from mixed-operating-system (Linux, macOS, Windows) matrix Continuous Integration (CI) pipelines ***[eg Podman]***.
 
+<img src="../assets/excalidraw-1.png" alt="System Architecture" width="100%">
+
 ### ***CORE Architectural decisions taken***
 
 #### log Ingestion Strategy  [Push-Based Webhooks over Active Polling]
@@ -29,9 +31,9 @@ Podman’s CI grid triggers thousands of parallel matrix runs across multiple ac
 
 *source: GitHub*
 
-![image.png](Architecture%20Proposal%20Specification%20@flake-agent/image.png)
+<img src="Architecture%20Proposal%20Specification%20%40flake-agent/image.png" alt="GitHub Webhook" width="800">
 
-If an endpoint takes longer than 10 seconds to respond, GitHub drops the connection, flags the payload as failed, and initiates aggressive retry sequences that flood the server. 
+If an endpoint takes longer than 10 seconds to respond, GitHub drops the connection, flags the payload as failed, and initiates aggressive retry sequences that flood the server.
 
 - *The system splits incoming webhooks from the core compute layer using an asynchronous message queue, satisfying GitHub's tight timeout rules by executing long-running agent workflows within isolated worker container pools.*
 
@@ -65,7 +67,7 @@ moreover
 +--------------------------------------------------------------------------------------------------+
 ```
 
-*see the core [decisions.md](http://decisions.md) !* 
+*see the core [decisions.md](../DECISIONS.md) !* 
 
 ---
 
