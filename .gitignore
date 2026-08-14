@@ -1,4 +1,5 @@
-docs/*
+docs/technical-blueprint.md
+docs/ai-context.md
 .venv
 venv
 .env
