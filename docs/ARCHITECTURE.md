@@ -1,81 +1,39 @@
-# Architecture Proposal Specification: @flake-agent
+# Architecture: agentic CI flake categorization for Podman
 
----
+## 1. Problem and goal
 
-## 1. Executive Summary & Architectural Core
+Podman's CI runs thousands of low-level system integration tests per pull request against a container runtime that talks directly to the Linux kernel, namespaces, storage drivers, and CNI interfaces such as Netavark. That surface area is inherently prone to transient environment failures, resource contention, and timing races, on top of whatever real regressions land in a given PR.
 
-In container runtimes such as **Podman**, continuous integration (CI) pipelines execute thousands of low-level system integration tests per pull request. Systems interfacing directly with the Linux kernel, Linux namespaces, storage drivers, and CNI interfaces (such as Netavark) are inherently susceptible to transient environment failures, resource contention, and timing races.
+When a run fails, a maintainer has to do two things by hand: read through 10,000 to 50,000 lines of mixed stdout and stderr across dozens of concurrent matrix jobs, and decide whether each failure is a real regression or a flaky test, one that produces false positives and false negatives at random. Doing that manually, repeatedly, across a matrix that spans Linux, macOS, and Windows, is the actual operational cost this project is meant to remove. It's a parsing and triage problem before it's an AI problem: an LLM pointed at a raw fifty-thousand-line log either misses the signal in the noise or burns tokens finding it, so the ingestion and filtering layer has to do the work first.
 
-When a CI run fails, developers face two immediate issues:
-
-1. **High Triage Overhead:** CI execution logs routinely span 10,000 to 50,000 lines of mixed standard output and standard error across multiple concurrent jobs.
-2. **Failure Disambiguation:** Differentiating between a **deterministic regression** (a hard bug in new code) and a **"flaky"** tests,  tests that randomly produce both false positive and false negative outcomes severely degrade developer velocity and erode trust in the CI signal. 
-3. When maintainers are forced to manually dig through extensive GitHub Actions logs to identify, categorize, and troubleshoot these inconsistent failures, it creates a massive, time-consuming operational burden.
-
-*Non-deterministic* (**"flaky"**) test failures degrade developer velocity and create significant operational overhead. Manually scanning multi-megabyte GitHub Actions logs to isolate environmental blips, race conditions, network timeouts, and compiler errors is inefficient.
-
-*The **Goal** of this architecture is to design a **microservice*** an asynchronous, event-driven system to be designed to capture, sanitize, parse, and analyze text execution logs from mixed-operating-system (Linux, macOS, Windows) matrix Continuous Integration (CI) pipelines ***[eg Podman]***.
+This document describes an asynchronous, event-driven microservice that ingests, sanitizes, parses, and triages failing CI logs from Podman's multi-OS matrix, and posts a single categorized summary back to the pull request. The system topology is shown below.
 
 <img src="../assets/excalidraw-1.png" alt="System Architecture" width="100%">
 
-> **Note:** This architecture and its technical decisions are based on my research, design exploration, iterative reasoning, and prior experience. It should be considered a baseline rather than a finalized implementation; decisions may evolve phase-by-phase as requirements, practical findings, and mentor guidance shape the project.
+> This architecture reflects research, design exploration, and prior experience, not a finalized implementation. Decisions are expected to evolve phase by phase as requirements firm up and mentor feedback comes in. See [DECISIONS.md](./DECISIONS.md) for the full set of architectural decision records and the reasoning behind each one; this document focuses on how the system actually flows.
 
-### ***CORE Architectural decisions taken***
+## 2. Core architectural decisions
 
-#### log Ingestion Strategy  [Push-Based Webhooks over Active Polling]
+**Push-based webhooks over polling.** Polling the GitHub Workflow Runs API every 30 to 60 seconds across active forks exhausts rate limits and adds up to a minute of triage latency before analysis even starts. Instead, a FastAPI gateway stays idle until GitHub delivers an authenticated `workflow_job` webhook on completion, which costs nothing while there's no failure to look at.
 
-- **Context:** Continually polling the GitHub Workflow Runs API  every 30 to 60 seconds across active repositories quickly exhausts upstream rate limits while introducing up to a minute of pipeline triage delay.
-- **Decision:** Implement an event-driven, push-based webhook gateway using **FastAPI**. The ingestion pipeline remains dormant until GitHub emits an authenticated HTTP `POST` event upon workflow completion.
+**Ingestion decoupled from compute.** GitHub drops a webhook connection and starts retrying if the endpoint takes longer than 10 seconds to respond. So the edge gateway does the minimum: verify the HMAC-SHA256 signature, extract metadata, deduplicate, and enqueue, all in under 50ms, and return. The actual parsing and reasoning work happens later in a separate worker pool, decoupled from the incoming HTTP connection entirely.
 
-#### **Rate-Limit Resilience & Ingestion Decoupling**
+**Why not the naive version of this.** A few failure modes show up quickly if you skip the above:
 
-Podman’s CI grid triggers thousands of parallel matrix runs across multiple active forks. Pulling full log payloads sequentially or naively from the REST API quickly exhausts GitHub's secondary rate limits, causing immediate `403 Forbidden` failures.
+- Running parsing or multi-turn LLM loops inside the webhook's own request-response cycle guarantees timeouts, GitHub retries, and a feedback loop of duplicate work.
+- Naively polling or pulling full log payloads across a matrix that fires thousands of parallel jobs trips GitHub's secondary rate limits and returns `403` lockouts.
+- Reading a 50 to 100MB raw log straight into process memory across several concurrent workers is a fast way to trigger the Linux OOM killer.
+- Feeding an unparsed multi-thousand-line log directly into an LLM context window bloats token usage, inflates cost, and degrades the model's ability to find the actual failure.
 
-*source: GitHub*
+The system is built around five commitments that follow directly from those failure modes:
 
-<img src="Architecture%20Proposal%20Specification%20%40flake-agent/image.png" alt="GitHub Webhook" width="800">
+1. Edge HTTP operations complete in under 50ms to stay well inside GitHub's 10-second webhook timeout.
+2. Zero-runner footprint: metadata comes from the webhook payload itself, nothing executes on Podman's own runners.
+3. Non-failing jobs are dropped at the edge gateway in under 2ms.
+4. OS and shell routing is driven by structured metadata (`matrix_os`, `runner_shell`), not by guessing from log content.
+5. Logs stream through sanitization in fixed 8KB chunks straight to disk, never held whole in memory.
 
-If an endpoint takes longer than 10 seconds to respond, GitHub drops the connection, flags the payload as failed, and initiates aggressive retry sequences that flood the server.
-
-- *The system splits incoming webhooks from the core compute layer using an asynchronous message queue, satisfying GitHub's tight timeout rules by executing long-running agent workflows within isolated worker container pools.*
-
-### **The Bottlenecks of a Naive Approach:**
-
-- **The Webhook Delivery Timeout Engine Block:** GitHub actions [webhooks](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks) enforce a strict 10-second request-response timeout window. Running complex parsing matrices or long-running multi-turn LLM loops inside the incoming HTTP connection loop guarantees connection drops, network retries, and systemic failure loops.
-- **API Rate-Limit Exhaustion:** High-frequency, parallel continuous integration matrix grids trigger thousands of active pipelines simultaneously. Blindsided polling or naive downloading of massive raw log files quickly triggers secondary GitHub API rate limits, resulting in immediate `403 Forbidden` lockout states.
-- **System memory (OOM) Exhaustion:** Pulling raw 50MB to 100MB text log files straight into volatile system memory strings across parallel processing threads creates immediate RAM spikes, leading to Linux kernel Out-Of-Memory (OOM) daemon terminations.
-- **Context Window Overload and Cost Inflation:** Raw text files from verbose container runtimes easily reach 10,000+  lines, consisting mostly of generic build environment noise. Injecting this **unparsed text** directly into an **LLM** *causes severe context window* bloat, drives up API bills, and degrades model evaluation accuracy.
-
-moreover 
-
-```markdown
-+--------------------------------------------------------------------------------------------------+
-|                                    CORE ARCHITECTURAL COMMITMENTS                                |
-+--------------------------------------------------------------------------------------------------+
-| 1. Ingestion Decoupling via Memory Buffer                                                        |
-|    Edge HTTP operations complete in <50ms to meet GitHub's strict 10-second webhook timeout.     |
-|                                                                                                  |
-| 2. Zero-Runner Footprint & Pure Out-of-Band Operations                                           |
-|    Metadata is extracted from inbound webhook payloads; no scripts run on target runners.        |
-|                                                                                                  |
-| 3. Fast-Drop Failure Filtering                                                                   |
-|    Successful or non-failing workflow jobs are discarded at the edge gateway in <2ms.            |
-|                                                                                                  |
-| 4. Context-Aware Dynamic OS Parsing                                                              |
-|    Routing labels (matrix_os, runner_shell) dynamically trigger OS-specific regex cascades.      |
-|                                                                                                  |
-| 5. Memory-Safe Stream Processing                                                                 |
-|    Logs stream in fixed 8KB chunks, passing through stream-sanitizers directly to NVMe storage.  |
-+--------------------------------------------------------------------------------------------------+
-```
-
-*see the core [decisions.md](./DECISIONS.md) !* 
-
----
-
-## 2. End-to-End System Data Flow Architecture
-
-### End-to-End Multi-OS Diagnostics Flow Diagram
+## 3. End-to-end data flow
 
 ```markdown
 +-------------------------------------------------------------------------------------------------------+
@@ -102,7 +60,7 @@ moreover
                                                    |
                                                    v
 +-------------------------------------------------------------------------------------------------------+
-| PHASE 2: CONTEXT-AWARE CASCADING PARSER                                                               |
+| PHASE 2: MULTI-OS CASCADING PARSER                                                                    |
 | [NVMe Plaintext Log] + [Execution Context Metadata] ---> [Dynamic OS Router Switch]                   |
 |                                                                                                       |
 |    ROUTE A: Linux / macOS                              ROUTE B: Windows / PowerShell                  |
@@ -112,12 +70,12 @@ moreover
 |    ├──► Attempt 4: Host Level Fatal Matcher            ├──► Attempt 4: Host Level Fatal Matcher       |
 |    └──► Attempt 5: Generic Tail Fallback               └──► Attempt 5: Generic Tail Fallback          |
 |                                                                                                       |
-| [ParseResult Object] ---> [PostgreSQL DB: matrix_job_results]                                         |
+| [ParseResult Object] ---> [PostgreSQL : matrix_job_results]                                           |
 +--------------------------------------------------|----------------------------------------------------+
                                                    |
                                                    v
 +-------------------------------------------------------------------------------------------------------+
-| PHASE 3: TRANSACTIONAL LEDGER AGGREGATION                                                             |
+| PHASE 3: LEDGER AGGREGATION                                                                           |
 | [Master Sync Gate Step] ---> Intercept "all-success" Node                                             |
 |                                      |                                                                |
 |                                      └─► Query PostgreSQL ---> [ComprehensiveRunManifest]             |
@@ -140,34 +98,19 @@ moreover
 +-------------------------------------------------------------------------------------------------------+
 ```
 
----
+## 4. Phase-by-phase breakdown
 
-## 3. Deep Phase Breakdown (Chronological Pipeline Execution)
+### Phase 0: edge ingestion and fast filtering
 
-## Phase 0:
+When a matrix job completes, GitHub POSTs a `workflow_job` event to `/webhook`.
 
-### [Edge Ingestion, Fast-Filtering & Out-of-Band Metadata Extraction]
+**Fast-drop filter.** GitHub sends `workflow_job` events for every outcome (`success`, `failure`, `cancelled`, `skipped`). Right after the HMAC check, the gateway inspects `conclusion`. Anything other than `failure` gets a `200 OK` and is dropped in under 2ms.
 
-When a matrix workflow job completes, GitHub Cloud issues an HTTP POST payload (`workflow_job` event) to the FastAPI edge gateway `/webhook`.
+**Out-of-band metadata extraction.** Rather than inferring runner properties by scanning log text later, the gateway reads them straight from the webhook payload: `workflow_job.id` as `job_id`, `workflow_job.run_id` as `run_id`, `workflow_job.labels`/`runner_name` as `matrix_os`, and `workflow_job.steps` as `runner_shell`.
 
-#### 1. Fast-Drop Failure Filter
+**Deduplication and queueing.** An atomic `SETNX` against `lock:{run_id}:{job_id}` in Redis blocks duplicate deliveries. On a unique key, the task is pushed to `tasks:fifo_queue` and the gateway returns `202 Accepted` in under 50ms.
 
-GitHub sends `workflow_job` completion webhooks for all outcomes (`success`, `failure`, `cancelled`, `skipped`). To eliminate unnecessary downstream processing, the edge layer inspects the JSON payload state immediately after HMAC signature validation. If `workflow_job.conclusion != "failure"`, the request is dropped in $<2\text{ms}$ with an HTTP `200 OK`.
-
-#### 2. Out-of-Band Context Extraction
-
-Rather than scanning text logs to infer runner properties, the gateway extracts execution metadata directly from the native webhook payload JSON fields:
-
-- `payload.workflow_job.id` $\rightarrow$ `job_id`
-- `payload.workflow_job.run_id` $\rightarrow$ `run_id`
-- `payload.workflow_job.labels` / `runner_name` $\rightarrow$ `matrix_os` (`windows-latest`, `ubuntu-latest`, `macos-latest`)
-- `payload.workflow_job.steps` $\rightarrow$ `runner_shell` (`bash`, `pwsh`, `zsh`)
-
-#### 3. Edge Deduplication & Task Queueing
-
-To protect against duplicate webhook deliveries, the gateway executes an atomic check-and-set operation (`SETNX`) inside Redis using a deterministically generated key (`lock:{run_id}:{job_id}`). If unique, the task payload is enqueued into the Redis FIFO list via `LPUSH tasks:fifo_queue`, and an HTTP `202 Accepted` response is returned in $<50\text{ms}$.
-
-#### proposed: Webhook Ingestion Data  `[Internal Schema]`
+Internal task envelope:
 
 ```json
 {
@@ -187,14 +130,14 @@ To protect against duplicate webhook deliveries, the gateway executes an atomic 
       "run_id": 456789,
       "head_sha": "a1b2c3d4e5f67890",
       "conclusion": "failure",
-      "logs_url": "<https://api.github.com/repos/org/repo/actions/jobs/981248/logs>"
+      "logs_url": "https://api.github.com/repos/org/repo/actions/jobs/981248/logs"
     }
   },
   "idempotencyKey": "idemp_job_981248_sha_a1b2c3d4"
 }
 ```
 
-#### proposed: `reference implementation`
+Reference implementation:
 
 ```python
 # app/routers/webhook.py
@@ -267,48 +210,28 @@ async def handle_github_webhook(
     }
 ```
 
----
+### Phase 1: worker ingestion and streaming
 
-## Phase 1:
+**Atomic queue consumption.** Celery workers block on `BRPOP tasks:fifo_queue 5`. Redis guarantees each task is leased to exactly one worker, so there's no risk of two workers processing the same job, and idle workers cost essentially nothing while waiting.
 
-### [Worker Ingestion, Streaming &  Storage]
-
-#### 1. Atomic Queue Consumption via `BRPOP`
-
-Isolated **Celery worker** processes poll the Redis broker using `BRPOP tasks:fifo_queue 5`.
-
-- **Atomic Task Leasing:** Redis `BRPOP` ensures that each task envelope is leased to exactly one worker container, eliminating race conditions.
-- **Concurrency Shock Absorption:** Under heavy parallel matrix bursts, the Redis list queues inbound tasks safely while Celery workers consume them at maximum processing throughput.
-- **Zero Idle CPU Overhead:** Worker threads block safely while awaiting new tasks, consuming negligible CPU cycles during idle periods.
-
-```markdown
-[ FASTAPI EDGE GATEWAY ] ──► (LPUSH tasks:fifo_queue) ──► [ REDIS LIST BUFFER ]
-                                                                 │
-                                 ┌───────────────────────────────┴───────────────────────────────┐
-                                 ▼ (BRPOP tasks:fifo_queue 5)    ▼ (BRPOP tasks:fifo_queue 5)    ▼ (BRPOP)
-                          [ CELERY WORKER 1 ]             [ CELERY WORKER 2 ]             [ CELERY WORKER 3 ]
-                          (Leases Task Envelope)          (Idles efficiently)             (Idles efficiently)
+```
+[ FASTAPI EDGE GATEWAY ] --(LPUSH)--> [ REDIS LIST BUFFER ]
+                                              |
+                    +-------------------------+-------------------------+
+                    v (BRPOP)                 v (BRPOP)                 v (BRPOP)
+             [ CELERY WORKER 1 ]        [ CELERY WORKER 2 ]        [ CELERY WORKER 3 ]
+              leases a task envelope      idles                      idles
 ```
 
-#### 2. Streaming & Stream Sanitization
+**Streaming and sanitization.** Using the `job_id` from Phase 0, the worker streams the raw log from GitHub's REST API in fixed chunks rather than buffering the whole file, and cleans it on the fly:
 
-Using the `job_id` extracted in **Phase 0**, the worker **streams** the raw execution log from GitHub's **REST API** over network sockets in fixed chunks. 
+1. Strip ANSI color codes (`\x1b[32m` and similar).
+2. Strip leading ISO-8601 runner timestamps.
+3. Truncate below the "teardown wall": platform-specific cleanup anchors that mark where the log stops being test signal and starts being shutdown noise. Linux and macOS anchors include `"Collecting logs"`, `"SIGKILL"`, `"make: *** [clean]"`. Windows/pwsh anchors include `"##[section]Finishing:"`, `"Post Job Cleanup"`, `"Write-Output"`.
 
-*The log stream is processed on-the-fly to prevent high RAM memory utilization:*
+The cleaned stream is written to `/app/tmp/raw_logs/job_{job_id}.log` on a shared NVMe volume.
 
-1. **ANSI Code Removal:** Strips terminal color codes (e.g., `\x1b[32m`).
-2. **Timestamp Truncation:** Strips leading ISO-8601 runner timestamp strings.
-3. **Dynamic Teardown Truncation (The Teardown Wall):** Evaluates `matrix_os` and `runner_shell` properties to truncate non-essential teardown logs below platform cleanup anchors:
-- *Linux / macOS Anchors:* `["Collecting logs", "SIGKILL", "make: *** [clean]"]`
-- *Windows pwsh Anchors:* `["##[section]Finishing:", "Post Job Cleanup", "Write-Output"]`
-
-The cleaned plaintext stream is written directly to a shared NVMe volume path in the **worker container**  (`/app/tmp/raw_logs/job_{job_id}.log`).
-
-#### 3. Inter-Phase Task State Object
-
-Once log extraction finishes, the worker constructs an ephemeral `State` passed to the parsing layer:
-
-*contextually looks*  
+Task state handed to the parsing layer:
 
 ```json
 {
@@ -321,20 +244,17 @@ Once log extraction finishes, the worker constructs an ephemeral `State` passed 
   "result_file_path": "/app/tmp/raw_logs/job_981248.log"
 }
 ```
-
----
-
 ## Phase 2:
 
-### [Context-Aware Multi-OS Cascading Parser Matrix]
+### Phase 2: multi-OS cascading parser
 
-The `Multitier Heuristic Parser` reads the file path provided in the `State` object and applies platform-specific regex cascades directed by `matrix_os [Windows, Ubuntu/Unix/MacOS]` and `runner_shell [Pwsh, Bash, etc]`.
+The parser reads the file path from the state object and applies platform-specific regex cascades chosen by `matrix_os` (Windows, Ubuntu, macOS) and `runner_shell` (pwsh, bash, and so on), rather than by scanning log content to guess the platform:
 
 ```markdown
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ STEP: Multi-Driver Cascading Router -- [PLATFORM MATRICES REDIRECTION]                           │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
-│   IF Context == Linux / macOS (Bash standard execution environment)                               │
+│   IF Context == Linux / macOS (Bash standard execution environment)                              │
 │   ├───► Attempt 1: BATS Pattern Matcher                                                          │
 │   ├───► Attempt 2: Go / Ginkgo Test Pattern Matcher                                              │
 │   ├───► Attempt 3: Go Compiler Syntax Matcher                                                    │
@@ -421,90 +341,16 @@ The `Multitier Heuristic Parser` reads the file path provided in the `State` obj
 }
 ```
 
-### Key Engineering Findings:
+**Why the router is designed this way.** A review of Podman's own `ci.yml` (github.com/podman-container-tools/podman, `.github/workflows/ci.yml`) surfaced two things that shaped this design directly:
 
-#### PODMAN’s  CI workflow Structure & Dynamic Router Architectural Rationale
+- The pipeline explicitly disables action caching in lint jobs (`skip-cache: true`), with a comment citing flaky results from stale cache state (see Issue #28893). That's a concrete example of a pipeline failure with nothing to do with the code under test, which is exactly why categorization has to happen out of band rather than assuming every red check is a real bug.
+- `dorny/paths-filter` splits the matrix across genuinely different execution environments: POSIX nodes run Makefile targets in bash and fail with GNU `make: ***` markers and forward-slash paths, while Windows nodes run PowerShell wrappers (`.\winmake.ps1`) and fail with `$ErrorRecord` objects and backslash paths. A parser tuned for one will silently fail to extract anything useful from the other, it won't error, it'll just miss the file path and line number entirely.
 
-### 1. Upstream `ci.yml` Audit & Engineering Findings
+That's why routing is driven by structured `matrix_os` and `runner_shell` metadata captured in Phase 0, not by scanning log text to guess the platform, and why Linux/macOS and Windows get entirely separate regex cascades rather than one cascade with conditionals bolted on.
 
-ref: https://github.com/podman-container-tools/podman/blob/main/.github/workflows/ci.yml
+### Phase 3: ledger aggregation
 
-on a Deep Analysis of **Podman’s** repository CI workflow) revealed critical environmental constraints that directly dictated the design of the **parsing** tier:
-
-> **💡 Key Finding 1: Embedded Environmental Workarounds (`skip-cache: true`)**
-> 
-> - **Observation:** The core `ci.yml` pipeline explicitly disables action caching inside linting workflow blocks:YAML
->     
->     ```yaml
->     - uses: golangci/golangci-lint-action@v9.3.0
->       with:
->         skip-cache: true # cache causes flaky results (e.g., Issue #28893)
->     ```
->     
-> - **Insight:** Non-deterministic caching on GitHub Actions runners creates artificial linting and compilation flakes. The source code itself is correct, but stale or corrupted runner cache state causes false-positive failures. This proves that pipeline failures cannot be assumed to originate from code defects alone, necessitating out-of-band categorization of runner infrastructure blips.
-
-> **💡 Key Finding 2: Matrix Path Boundaries & Execution Diversity**
-> 
-> - **Observation:** Pipelines utilize path-filtering actions (`dorny/paths-filter`) to split matrix workloads dynamically across heterogeneous operating systems:
->     - **POSIX Linux / macOS Nodes:** Run standard Makefile targets inside native `bash` environments. Errors display standard GNU `make: ***` markers and forward-slash path configurations (`/app/cmd/...`).
->     - **Windows Server Nodes:** Execute custom powershell wrappers (`.\winmake.ps1 localmachine`) inside PowerShell Core (`pwsh`) on nested Hyper-V or WSL runner instances. Errors emit native PowerShell `$ErrorRecord` objects (`+ CategoryInfo : ...`) and backslash path syntax (`C:\Users\...`).
-> - **Engineering Insight:** Pipeline execution environments are fundamentally non-uniform. A parser designed for POSIX terminal output will completely fail to extract file paths, line numbers, and panic traces when encountering a PowerShell `ErrorRecord` block.
-
-### 2. Architectural Rationale: Why the Dynamic Multi-OS Router Strategy?
-
-To address the findings from the upstream pipeline audit, the system implements a 
-
-**Context-Aware Dynamic Multi-OS Router**.
-
-```yaml
-┌──────────────────────────────────────────────────────────────────────────────────────────┐
-│                      CORE ARCHITECTURAL RATIONALE & COMMITMENTs                          │
-├──────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                          │
-│  1. Out-of-Band Routing over Text Scanning                                               │
-│     The parser does NOT scan or guess the operating system by reading log lines.         │
-│     It extracts `matrix_os` and `runner_shell` directly from Phase 0 webhook headers     │
-│     and passes them as structured metadata alongside the log file path.                  │
-│                                                                                          │
-│  2. Deterministic Routing Cascades                                                       │
-│     The worker uses execution metadata to route the log stream directly into OS-specific │
-│     specific parsers (POSIX Bash Cascade vs. Windows PowerShell Cascade).                │
-│                                                                                          │
-│  3. Zero-Token / Minimal CPU Execution                                                   │
-│     Bypasses heavy LLM scanning or multi-pass regex matching over unverified streams.    │
-│     This guarantees deterministic, high-throughput parsing at sub-millisecond speeds.    │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Phase 3:
-
-### Multi-OS Matrix Synchronization & Aggregation
-
-*ref eg*: https://github.com/podman-container-tools/podman/pull/29420
-
-```markdown
-🛑 GitHub Actions Status Check: Multi-OS Matrix Failure Storm
-
-*Some checks were not successful*
-
-🔴 30 failing, ⚪ 1 cancelled, 🟡 3 skipped, 🟢 35 successful checks
-```
-
-> **The Core Problem:** A **single PR** triggers massive *multi-OS matrix suites* .without synchronization, all concurrent worker threads would spam individuals comment bots onto the GitHub PR thread.
-**The Engineering Solution:** An asynchronous, ledger-backed checkpoint that ingests failures independently, aggregates them via a master sync gate, and posts a single unified summary report.
-> 
-
-To prevent this fragmentation a synchronization checkpoint coordinates PR responses.
-
-When a job completes parsing, the worker checks if the job corresponds to the master pipeline synchronization step (`all-success` or pipeline finish check ci.yml). 
-
-![image.png](Architecture%20Proposal%20Specification%20@flake-agent/image%201.png)
-
-Upon reaching this check, the gate sync coordinator queries **PostgreSQL**, aggregating error records for different jobs registered for the given `run_id` into a single 
-
-`ComprehensiveRunManifest`:
+A single PR can trigger a matrix of 30+ jobs. Without synchronization, every worker that finishes would post its own comment to the PR, which is worse than no automation at all. Instead, each worker checks whether its job corresponds to the pipeline's final sync-gate check (Podman's `all-success` job, see *ref eg*: https://github.com/podman-container-tools/podman/pull/29420, which shows a single PR with 30 failing checks across the matrix). Once that gate fires, the aggregator queries PostgreSQL for every failure tied to the `run_id` and compiles a single manifest:
 
 ```json
 {
@@ -513,159 +359,82 @@ Upon reaching this check, the gate sync coordinator queries **PostgreSQL**, aggr
   "head_sha": "a1b2c3d4e5f67890",
   "total_failed_jobs": 30,
   "failures": [
-    { 
-      "job_id": 981247, 
-      "os": "fedora-current", 
-      "test": "podman healthcheck", 
-      "file": "pkg/drivers/podman_test.go:142",
-      "error": "Healthcheck timed out after 15645ms" 
-    },
-    { 
-      "job_id": 981248, 
-      "os": "debian-sid", 
-      "test": "podman healthcheck", 
-      "file": "pkg/drivers/podman_test.go:142",
-      "error": "Healthcheck timed out after 15645ms" 
-    },
-    { 
-      "job_id": 981249, 
-      "os": "fedora-prior", 
-      "test": "podman healthcheck", 
-      "file": "pkg/drivers/podman_test.go:142",
-      "error": "Healthcheck timed out after 15645ms" 
-    },
-    { 
-      "job_id": 981250, 
-      "os": "fedora-rawhide", 
-      "test": "podman healthcheck", 
-      "file": "pkg/drivers/podman_test.go:142",
-      "error": "Healthcheck timed out after 15645ms" 
-    }
-    // ... continues dynamically up to job 30
+    { "job_id": 981247, "os": "fedora-current", "test": "podman healthcheck", "file": "pkg/drivers/podman_test.go:142", "error": "Healthcheck timed out after 15645ms" },
+    { "job_id": 981248, "os": "debian-sid", "test": "podman healthcheck", "file": "pkg/drivers/podman_test.go:142", "error": "Healthcheck timed out after 15645ms" },
+    { "job_id": 981249, "os": "fedora-prior", "test": "podman healthcheck", "file": "pkg/drivers/podman_test.go:142", "error": "Healthcheck timed out after 15645ms" },
+    { "job_id": 981250, "os": "fedora-rawhide", "test": "podman healthcheck", "file": "pkg/drivers/podman_test.go:142", "error": "Healthcheck timed out after 15645ms" }
   ]
 }
 ```
 
----
-
-## Phase 4:
-
-### Agentic Reasoning & Flake Tracking (ref: LangGraph AI Workflow)
-
+### Phase 4: agentic triage
 ![image.png](Architecture%20Proposal%20Specification%20@flake-agent/6f4197de-be0f-4ed8-b83d-1210c75b585b.png)
 
-The compiled `ComprehensiveRunManifest` payload is passed to a multi-agent LangGraph network loop for automated analysis:
-
-#### Single-Job vs. Aggregated Matrix Input
-
-In the single-job model, Node 1 evaluated one log file for one `job_id`. In the aggregated matrix model, Phase 4 receives **all 30 failing jobs simultaneously** inside `ComprehensiveRunManifest`.
-
-### Shared State Evolution
+The manifest goes to a LangGraph loop for analysis. Unlike a single-job model, where one node evaluates one log, this receives all 30 failing jobs at once:
 
 ```python
-# AFTER (Aggregated Multi-OS Matrix State)
 state = {
     "run_id": 456789,
-    "manifest": ComprehensiveRunManifest,  # Contains all 30 failing job DTOs
+    "manifest": ComprehensiveRunManifest,   # all failing job DTOs
     "confidence": 0.0,
-    "extra_log_context": {},  # Map of { job_id: "20 lines of raw trace" }
+    "extra_log_context": {},                # { job_id: "20 lines of raw trace" }
     "final_report": None,
-    "iteration_count": 0
+    "iteration_count": 0,
 }
 ```
 
-### How Tool Calling Works with Aggregated Failures (Node 2)
-
-When Node 1 runs its first LLM pass over all 30 failures, it might notice:
-
-> *"28 jobs failed due to a global timeout at `podman_test.go:142`, but Job `981248` on Windows `pwsh` failed with an ambiguous exit code."*
-> 
-
-Because confidence for Job `981248` is low ($< 0.85$), Node 1 triggers a **parameterized tool call** to Node 2 (**Log-Miner Tool**).
-
-#### The Tool Signature
-
-**Node 2** it takes **specific parameters** targeting individual `job_id` entries inside the manifest:
+On its first pass, Node 1 might find that 28 of 30 failures trace to the same timeout at `podman_test.go:142`, but one Windows job failed with an ambiguous exit code the others don't share. Because confidence on that one job is below 0.85, Node 1 makes a targeted tool call to Node 2 rather than re-reasoning over the whole manifest again:
 
 ```python
 @tool
 def log_miner_tool(job_id: int, search_keyword: str = None, window_lines: int = 20) -> str:
     """
-    Zero-Token Local NVMe Lookup for a specific matrix job log.
+    Zero-token local lookup for a specific matrix job's log.
     Path: /app/tmp/raw_logs/job_{job_id}.log
     """
     log_path = f"/app/tmp/raw_logs/job_{job_id}.log"
 
-    # 1. Zero-Token NVMe Cache Lookup
     if os.path.exists(log_path):
         return extract_trace_window(log_path, search_keyword, window_lines)
 
-    # 2. Fallback Re-fetch from GitHub REST API if evicted
     raw_log = refetch_github_job_log(job_id)
     return extract_trace_window_from_string(raw_log, search_keyword, window_lines)
 ```
 
-1. The LLM specifies `job_id=981248` and `search_keyword="Write-Error"`.
-2. Node 2 performs a **0-token local Python file read** directly on disk at `/app/tmp/raw_logs/job_981248.log`.
-3. **tool** returns a slice of 20 log lines and hydrates `state["extra_log_context"][981248]`.
+Node 2 reads 20 lines around the keyword straight off disk at zero token cost and hydrates `state["extra_log_context"][job_id]`, and Node 1 re-evaluates with that added context.
 
-## 3. Node-by-Node Execution Flow in Phase 4
-
-```markdown
+```
                            [ ComprehensiveRunManifest ]
-                                       │
-                                       ▼
-                       ┌───────────────────────────────┐
-                       │   NODE 1: TRIAGE EVALUATOR    │
-                       │       (1st LLM Pass)          │
-                       └───────────────┬───────────────┘
-                                       │
-                    ┌──────────────────┴──────────────────┐
-                    ▼                                     ▼
-          (Confidence >= 0.85)                  (Confidence < 0.85)
-                    │                                     │
-                    │                         ┌───────────┴───────────┐
-                    │                         │  NODE 2: LOG-MINER    │
-                    │                         │      SYSTEM TOOL      │
-                    │                         └───────────┬───────────┘
-                    │                                     │ Targeted Job Trace
-                    │                                     ▼
-                    │                         ┌───────────────────────┐
-                    │                         │ NODE 3: DEEP REASONER │
-                    │                         │    (2nd LLM Pass)     │
-                    │                         └───────────┬───────────┘
-                    │                                     │
-                    │                         ┌───────────┴───────────┐
-                    │                         │  Loop Guard Check?    │
-                    │                         └───────────┬───────────┘
-                    │                                     │ (Confidence >= 0.85)
-                    └──────────────────┬──────────────────┘
-                                       │
-                                       ▼
-                       ┌───────────────────────────────┐
-                       │   NODE 4: FAST-PATH PUBLISHER │
-                       │     (Standard Dispatcher)     │
-                       └───────────────┬───────────────┘
-                                       │
-                                       ▼
-                     Post 1 Consolidated Comment on PR
-                       & Write to Permanent DB Index
+                                        |
+                                        v
+                        [ NODE 1: TRIAGE EVALUATOR (1st LLM pass) ]
+                                        |
+                    +-------------------+-------------------+
+                    v                                        v
+          (confidence >= 0.85)                     (confidence < 0.85)
+                    |                                        |
+                    |                          [ NODE 2: LOG-MINER (deterministic) ]
+                    |                                        |
+                    |                          [ NODE 3: DEEP REASONER (2nd LLM pass) ]
+                    |                                        |
+                    |                          [ Loop guard check? ] -> (>= 0.85)
+                    +-------------------+-------------------+
+                                        v
+                        [ NODE 4: FAST-PATH PUBLISHER ]
+                                        |
+                                        v
+                  Post one consolidated comment to the PR
+                    and write to the permanent DB index
 ```
 
-- **Node 1 (Triage Evaluator - 1st LLM Pass):** Ingests `ComprehensiveRunManifest`. Identifies common cross-matrix patterns vs isolated OS anomalies. If all failures are clear, outputs high confidence (>= 0.85) directly to Node 4.
-- **Node 2 (Log-Miner System Tool - Deterministic Python):** Executes zero-token Python line extractions for specific `job_id` values flagged as ambiguous by Node 1.
+- **Node 1, triage evaluator.** Reads the full manifest, separates common cross-matrix patterns from isolated per-OS anomalies. If every failure resolves with high confidence, it goes straight to Node 4.
+- **Node 2, log miner.** Deterministic Python, no model call. Pulls a targeted slice of a specific job's log for whichever entries Node 1 flagged as ambiguous.
+- **Node 3, deep reasoner.** Re-evaluates the flagged entries with the extra log context, updating classification (for example `FLAKE_TEST` vs `GENUINE_BUG`) and pushing confidence past 0.85.
+- **Node 4, publisher.** Writes the final `flake-report.json` to the database and posts one consolidated PR comment for the entire run, not one per job.
 
-- **Node 3 (Deep Reasoner - Context-Enriched LLM Pass):** Receives the manifest *plus* the targeted log slices retrieved by Node 2. Re-evaluates root causes, updates classification (e.g., `FLAKE_TEST` vs `GENUINE_BUG`), and pushes confidence above **0.85**.
-- **Node 4 (Fast-Path Publisher / Dispatcher):** Commits `flake-report.json` to the database and dispatches **one single consolidated PR comment** summarizing the entire 30-job run.
+## 5. Deployment
 
----
-
-## Microservice Deployment Architecture
-
-*not certainly sure on this yet, but Roughly:*
-
-The application runs out of a single universal Docker image blueprint bundling FastAPI, Celery, LangGraph, and custom parsing modules.
-
+Deployment topology isn't finalized. The current plan is a single Docker image containing FastAPI, Celery, and the agent code, split into two roles at runtime by entrypoint rather than by separate images:
 ```
                   ┌──────────────────────────────────────────┐
                   │        SINGLE DOCKER IMAGE BLUEPRINT     │
@@ -686,37 +455,26 @@ The application runs out of a single universal Docker image blueprint bundling F
 │ • Handles signature & queue. │              │ • Manages Disk IO & LLM.     │
 └──────────────────────────────┘              └──────────────────────────────┘
 ```
+The web tier runs `uvicorn app.main:app` and serves the public webhook endpoint. The compute tier runs `celery -A app.tasks worker`, handling streaming, parsing, and LLM reasoning with zero public network ports.
 
-At deployment runtime, container roles split based on execution entrypoints:
+## 6. Deliverables
 
-- **Web Tier Node:** Executes `uvicorn app.main:app` to serve public webhook endpoints.
-- **Compute Worker Tier Node:** Executes `celery -A app.tasks worker` to perform background streaming, text processing, and AI reasoning with zero public ingress ports.
+**Single-comment PR triage.** One markdown table posted to the PR once Phase 3's sync check completes, instead of one comment per failing job. Eliminates notification spam and gives maintainers one place to look.
 
----
+**Context-aware multi-OS parser.** Selects a regex cascade based on `matrix_os` and `runner_shell` rather than one parser trying to handle both POSIX and PowerShell output, which is what breaks silently when a single-platform parser meets the other platform's error format.
 
-## System Deliverables & Engineering Justifications
+**Isolated compute fleet.** Workers consume tasks over Redis (`BRPOP`) and stage logs on NVMe, fully decoupled from the web tier, so a burst of concurrent matrix failures can't starve the process handling incoming webhooks or push it into OOM.
 
-### Deliverable A: Single-Comment Pull Request Triage Interface
+## 7. Data lineage
 
-- **Mechanism:** Posts a single markdown table summary pinned to the target Pull Request thread upon completion of Phase 3 sync checks.
-- **Justification:** Eliminates automated notification noise. Developers review a single consolidated report spanning all failing operating system matrix jobs.
-
-### Deliverable B: Context-Aware Multi-OS Parser
-
-- **Mechanism:** Dynamic heuristic parser that evaluates incoming execution context (`matrix_os`, `runner_shell`) to select target regex cascades.
-- **Justification:** Prevents structural pattern breaks caused when single-platform log parsers evaluate Windows PowerShell paths or exception blocks using POSIX match patterns.
-
-### Deliverable C: Memory-Isolated Asynchronous Compute Fleet
-
-- **Mechanism:** Network-isolated compute nodes consuming task envelopes via Redis RAM queues (`BRPOP`) and staging logs on NVMe volumes.
-- **Justification:** Guarantees infrastructure stability during high-concurrency traffic bursts. Moving heavy text parsing and LLM calls out-of-band prevents web servers from encountering out-of-memory errors.
-
-### Infrastructure Data Lineage Matrix
-
-| Phase | Boundary Name | Data Transport Object (DTO) | Active Engine Target | IO Target Storage | Retention Window (TTL) |
+| Phase | Boundary | Data object | Component | Storage | Retention |
 | --- | --- | --- | --- | --- | --- |
-| **Phase 0** | Edge Ingestion Gate | Webhook Task Envelope JSON | FastAPI Ingestion Gateway | Volatile Redis RAM Core | 1 Hour (String TTL) |
-| **Phase 1** | Extraction & Sanitization | Ephemeral Task State Object | Celery Concurrency Fleet | Shared NVMe Disk Volume | 24 Hours (Cron Auto-Purge) |
-| **Phase 2** | Text Parsing Matrix | Filtered Code Window JSON | Dynamic OS Strategy Parser | PostgreSQL Database | Permanent Indexed Record |
-| **Phase 3** | Ledger Aggregation Gate | Unified Multi-OS Run Manifest | Synchronizer Checkpoint Node | System Thread Buffers | Ephemeral (Execution State) |
-| **Phase 4** | Agentic Logic Triaging | Struct-Validated Flake Report | LangGraph Agent Network | PostgreSQL Database | Permanent Analytical Record |
+| 0 | Edge ingestion | Webhook task envelope (JSON) | FastAPI gateway | Redis | 1 hour (key TTL) |
+| 1 | Extraction & sanitization | Ephemeral task state | Celery worker fleet | NVMe volume | 24 hours (cron purge) |
+| 2 | Parsing | Filtered parse result (JSON) | OS-specific parser | PostgreSQL | Permanent, indexed |
+| 3 | Ledger aggregation | Run manifest | Sync checkpoint node | In-memory | Ephemeral (execution state) |
+| 4 | Agentic triage | Flake report (JSON) | LangGraph agent | PostgreSQL | Permanent, indexed |
+
+## 8. Further reading
+
+The reasoning and trade-offs behind each decision above, including the two-tier deduplication strategy, the local-only LLM choice for Phase 4, and the reporting layer, are documented in [DECISIONS.md](./DECISIONS.md).
