@@ -1,69 +1,72 @@
 # DECISIONS.md
 
----
+## 1. Problem statement and operational reality
 
-## 1. Problem Statement & Operational Reality
+Podman is a container runtime with complex, multi-OS end-to-end test suites (Fedora, Ubuntu, macOS, Windows). Flaky CI runs degrade engineering velocity in two concrete ways: raw failed-run logs commonly run from the tens of thousands of lines into six figures once a full multi-OS matrix is counted, and maintainers lose real time either parsing that noise by hand or re-running CI blind, hoping the failure was transient. The target is to automatically ingest failing runs, cut the noise down to what's actually signal, classify root cause with an AI/LLM workflow, and report actionable findings directly to PR comments and issues.
 
-***Podman** is an enterprise container runtime with complex, multi-OS E2E test suites* 
+> This architecture and the decisions below are based on my own research, design exploration, and prior experience. None of it is a finalized or confirmed implementation. It's a baseline that gives a strong initial direction, and I expect some of these decisions to change as requirements firm up, implementation constraints surface, and mentor feedback comes in. The goal at this stage is a well-reasoned foundation, not every detail locked in advance.
 
-*(Fedora, Ubuntu, macOS, Windows). Flaky CI runs severely degrade engineering velocity:*
+## 2. Core architectural decision records
 
-- **Log Overload:** Raw Podman CI runs produce **20,000 to 100,000+ log lines** per failed run (~10MB to 50MB raw text).
-- **Developer Fatigue:** Maintainers waste hours parsing noise or blindly triggering CI re-runs to pass builds.
-- **Target:** Automatically ingest failing runs, strip 80%+ noise, classify root causes using AI/LLM workflows, and report actionable fixes directly to PR comments/issues.
+### ADR-01: push-based webhook gateway vs. active polling
 
-## 2. Core Architectural Decision Records (ADRs)
+**Decision.** Build an event-driven ingestion gateway using FastAPI, listening to GitHub `workflow_job` completion events.
 
-> **Note:** The architecture and architectural decisions documented here, including `decisions.md`, `architecture.md`, and the related design documents, are based on my own research, design exploration, iterative decision-making, and prior experience. I do not consider the current architecture to be a 100% finalized or confirmed implementation. It is intended as a baseline architecture that provides a strong initial direction and understanding of the system. As the project progresses, requirements become clearer, implementation constraints emerge, and mentor feedback is incorporated, some of these architectural decisions may change or evolve. The architecture may also be refined phase-by-phase based on practical findings and guidance throughout the mentorship. The goal at this stage is therefore to establish a well-reasoned foundation rather than prematurely lock every implementation detail.
+**Justification.** Active polling across multiple forks and repositories rapidly hits GitHub's rate limit (5,000 requests/hour) and adds 30 to 60 seconds of triage latency before analysis even starts. Push webhooks consume zero API quota while idle and deliver sub-second event initiation on a build failure.
 
-### ADR-01: Push-Based Webhook Gateway vs. Active Polling
+### ADR-02: rate-limit resilience and ingestion decoupling
 
-- **Decision:** Build an event-driven webhook ingestion gateway using **FastAPI** listening to GitHub `workflow_run.completed` events.
-- **Technical Justification:** Active REST API polling across multiple active forks/repositories rapidly hits GitHub rate limits (5,000 req/hr) and adds 30–60s Triage Latency. Push webhooks consume zero API quota during idle state and deliver sub-second event initiation upon build failure.
+**Decision.** Immediate HMAC-SHA256 signature validation in FastAPI, offloading job payloads to a Redis-backed Celery worker queue, returning `200 OK` in under 50ms.
 
-### ADR-02: Rate-Limit Resilience & Ingestion Decoupling
+**Justification.** GitHub drops a webhook connection and starts retrying if processing takes longer than 10 seconds. Decoupling ingestion from execution guarantees no dropped payloads under concurrent matrix execution, while Celery handles downstream rate limits with token-bucket limiting and exponential backoff.
 
-- **Decision:** Immediate HMAC-SHA256 signature validation via FastAPI, offloading job payloads to a **Redis-backed Celery worker queue**, returning HTTP `200 OK` in $<50\text{ms}$.
-- **Technical Justification:** GitHub drops webhook connections if processing exceeds 10 seconds, triggering duplicate retries. Decoupling ingestion from execution guarantees zero dropped payloads under concurrent matrix execution, while Celery handles execution limits via token-bucket rate limiters and exponential backoffs.
+### ADR-03: two-tier deduplication
 
-### ADR-03: Two-Tier High-Speed Deduplication
+**Decision.** Check for duplicates before any remote log fetch, in two tiers:
+1. In-memory: atomic key `run_{id}` in Redis, 1 hour TTL.
+2. Relational: `ci_runs` table in PostgreSQL, checked on a Redis miss.
 
-- **Decision:** Enforce a two-tier deduplication check before remote log fetching:
-    1. **Tier 1 (In-Memory RAM):** Check atomic key `run_{id}` in Redis (TTL: 1 hour).
-    2. **Tier 2 (Relational DB):** Check `ci_runs` table in PostgreSQL on Redis cache misses.
-- **Technical Justification:** Filters duplicate webhook events in $<1\text{ms}$, preventing redundant remote log downloads from GitHub APIs and avoiding database lock contention.
+**Justification.** Filters duplicate webhook events in under 1ms, avoiding redundant log downloads from the GitHub API and avoiding database lock contention under bursty matrix traffic.
 
-### ADR-04: Ephemeral Raw Log File Storage
+### ADR-04: ephemeral raw log storage
 
-- **Decision:** Stream raw logs to an ephemeral local **NVMe Docker Volume** (`/app/tmp/raw_logs/run_{id}.log`) with an automated 24-hour cleanup cron task.
-- **Technical Justification:** Storing multi-megabyte raw logs in Redis risks Kernel Out-Of-Memory (OOM) crashes, while writing raw blobs to PostgreSQL causes rapid storage bloat. NVMe local volumes provide near-zero I/O latency for background parsing.
+**Decision.** Stream raw logs to an ephemeral local NVMe volume (`/app/tmp/raw_logs/run_{id}.log`), with an automated 24-hour cleanup cron.
 
-### ADR-05: Signature-Based Multi-Stage Heuristic Parser
+**Justification.** Storing multi-megabyte raw logs in Redis risks OOM; writing raw blobs to PostgreSQL causes storage bloat fast. A local NVMe volume gives near-zero I/O latency for the parsing step that follows.
 
-- **Decision:** Route log streams through a deterministic 3-stage parser (Normalization $\rightarrow$ Teardown Wall Cutoff $\rightarrow$ Console Signature Matcher) *before* invoking any AI/LLM components.
-- **Technical Justification:**
-    - Over 80% of Podman flakes occur in `/test/system/` (BATS) and `/test/e2e/` (Go/Ginkgo).
-    - **Performance & Token Accuracy:** Truncates 20,000+ lines down to a ~2KB context window (**60%–80% noise reduction**), preventing LLM context window saturation.
-    - **Zero-Breakage:** Matches console stdout signatures rather than fragile folder structures, protecting the parser against repository refactoring. Unmatched formats fallback to grabbing the last 30 contextual log lines (zero dropped logs).
+### ADR-05: signature-based multi-stage heuristic parser
 
-### ADR-07: Local AI / Agentic Workflow Framework
+**Decision.** Route log streams through a deterministic three-stage parser (normalization, then teardown-wall cutoff, then console signature matching) before any AI or LLM component runs.
 
-- **Decision:** Utilize **LangGraph** paired with local LLM runtimes (**Ollama / vLLM** running Llama 3 or Qwen models) equipped with custom function tool calls (Code Searcher, Flake Classifier).
-- **Technical Justification:** Supports complete offline execution, eliminates cloud LLM vendor lock-in, avoids per-token API costs on CI failures, and provides determinism via structured JSON schema outputs.
+**Justification.** A review of Podman's own `ci.yml` shows pipeline failures that have nothing to do with the code under test, for example lint jobs explicitly disabling action caching because stale cache state produces flaky results (see Issue #28893), which is why categorization has to happen out of band rather than assuming every red check is a real regression. The parser matches console stdout signatures rather than folder structure, so it doesn't break when the repository gets refactored, and unmatched formats fall back to the last 30 contextual log lines rather than dropping anything. The target noise reduction is 60 to 80 percent of raw lines, based on the same filtering approach measured at 70 to 80 percent fewer downstream LLM calls on a 2,000-log evaluation set in an earlier version of this parser (LogIQ); that hasn't been validated against real Podman output yet, which is exactly what the first few weeks of implementation would establish.
 
-### ADR-08: Automated Mitigation & Dispatch Layer
+### ADR-06: semantic cache for repeat failures
 
-- **Decision:** Modular reporting engine outputting markdown summaries directly to PR comments, auto-generated GitHub Issues, and weekly aggregated reports via the GitHub REST API.
-- **Technical Justification:** Directly addresses developer workflow friction by bringing actionable insights directly into PR code review interfaces.
+**Decision.** Before a failure goes to the LangGraph triage loop, check a pgvector-backed similarity cache of previously classified failure signatures. A high-confidence match resolves the failure at zero additional compute cost; only signatures with no close match go to the agentic loop.
 
-## 3. Proposal Requirement Mapping Matrix
-How the design and technical decisions fulfill the requirements from [**CNCF LFX Proposal #1963**](https://github.com/cncf/mentoring/issues/1963):
+**Justification.** A meaningful share of CI flakes are the same underlying issue recurring across different PRs and runs, not novel each time. Resolving known signatures from cache avoids paying for a full LLM reasoning pass on something the system has already classified once, and keeps the agentic loop reserved for genuinely new failure modes.
 
-| **CNCF LFX Proposal Requirement Line / Outcome** | **Architecture Component / ADR** | **Technical Fulfillment Verification** |
+### ADR-07: local AI and agentic workflow framework
+
+**Decision.** LangGraph paired with local LLM runtimes (Ollama or vLLM, running Llama 3 or Qwen), with custom tool calls for log mining and classification.
+
+**Justification.** Full offline execution, no cloud LLM vendor dependency, no per-token cost on every CI failure, and deterministic structured JSON output. This is a deliberate departure from the earlier LogIQ version this is adapted from, which does use a hosted model as a fallback; Podman doesn't need that dependency or its cost profile.
+
+### ADR-08: automated mitigation and dispatch layer
+
+**Decision.** A modular reporting engine that outputs markdown summaries directly to PR comments, auto-generated GitHub Issues, and weekly aggregated reports via the GitHub REST API.
+
+**Justification.** Puts the finding directly into the interface maintainers already review PRs in, rather than a dashboard they have to remember to check.
+
+## 3. Requirement mapping
+
+How this design fulfills the outcomes from [CNCF LFX Proposal #1963](https://github.com/cncf/mentoring/issues/1963):
+
+| LFX requirement | Architecture component | Fulfillment |
 | --- | --- | --- |
-| **Data Ingestion Pipeline:** "automatically fetch, filter, and parse flaky CI run data and logs directly from the GitHub Actions API." | **ADR-01, ADR-02, ADR-04**<br><br>*(FastAPI + Redis/Celery + NVMe Volume)* | Webhook gateway catches completion events, Celery pulls log artifacts asynchronously without hitting rate limits, and streams raw text to NVMe volumes. |
-| **Log Noise Reduction & Parsing:** "Manually digging through extensive GitHub Actions logs... is a massive, time-consuming burden." | **ADR-05**<br><br>*(Multi-Stage Heuristic Parser Engine)* | Normalizes streams, cuts VM teardown logs (`SIGKILL`, cleanup), and reduces 20k+ lines down to a clean ~2KB error snippet (BATS / Go / Ginkgo). |
-| **Agentic Analysis Engine:** "integration with an AI/LLM framework... categorizes root cause (infra blips, race conditions, network timeouts) and generates plain-English analysis." | **ADR-06, ADR-07**<br><br>*(LangGraph + Local Ollama/vLLM + Semantic Cache)* | Triage router runs vector search first; if novel, LangGraph agent uses local LLMs & code search tools to classify the failure (`RACE_CONDITION`, `INFRA_TIMEOUT`, etc.) with structured explanations. |
-| **Mitigation & Reporting:** "takes findings and seamlessly integrates into developer workflow (auto-generating GitHub Issues, weekly reports, PR comments)." | **ADR-08**<br><br>*(Reporting Engine & GitHub REST API)* | Generates structured Markdown triage reports containing Root Cause, Actionable Mitigation, and Flake Frequency History directly as PR comments or issues. |
-| **Documentation:** "Comprehensive documentation covering tool architecture, deployment, and prompt tweaking." | **System Architecture & Config Layer** | Modular YAML prompt templates and containerized Docker Compose setups enable maintainers to customize tools and system behavior without code changes. |
-| **Technologies & Skills:** "AI, CI/CD, GitHub Actions, Go, Python, Local AI" | **Full Technical Stack** | Python backend (FastAPI, Celery, LangGraph), Go test suite parsers, Local LLMs (Ollama/vLLM), and GitHub Actions webhooks. |
+| Data ingestion pipeline: automatically fetch, filter, and parse flaky CI run data from the GitHub Actions API | ADR-01, ADR-02, ADR-04 (FastAPI + Redis/Celery + NVMe) | Webhook gateway catches completion events, Celery pulls log artifacts asynchronously without hitting rate limits, raw text streams to NVMe |
+| Log noise reduction and parsing: manually digging through extensive logs is a massive burden | ADR-05 | Normalizes streams, cuts teardown noise, reduces raw logs down to a clean signal snippet across BATS and Go/Ginkgo output |
+| Agentic analysis engine: integrate an AI/LLM framework that categorizes root cause and explains it in plain English | ADR-06, ADR-07 | Semantic cache resolves known signatures first; LangGraph agent on local models classifies novel failures (race condition, infra timeout, and so on) with a structured explanation |
+| Mitigation and reporting: findings integrate into developer workflow via issues, weekly reports, PR comments | ADR-08 | Structured markdown reports with root cause, suggested mitigation, and flake frequency history, posted as PR comments or issues |
+| Documentation: architecture, deployment, prompt tweaking | Architecture doc + config layer | Modular prompt templates and a containerized deployment let maintainers adjust behavior without touching code |
+| Technologies and skills: AI, CI/CD, GitHub Actions, Go, Python, local AI | Full stack | Python backend (FastAPI, Celery, LangGraph), Go test suite parsers, local LLMs via Ollama/vLLM, GitHub Actions webhooks |
