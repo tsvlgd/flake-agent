@@ -368,9 +368,10 @@ A single PR can trigger a matrix of 30+ jobs. Without synchronization, every wor
 ```
 
 ### Phase 4: agentic triage
+The manifest goes to a LangGraph loop for analysis. Unlike a single-job model, where one node evaluates one log, this receives all 30 failing jobs at once:
+
 ![image.png](Architecture%20Proposal%20Specification%20@flake-agent/6f4197de-be0f-4ed8-b83d-1210c75b585b.png)
 
-The manifest goes to a LangGraph loop for analysis. Unlike a single-job model, where one node evaluates one log, this receives all 30 failing jobs at once:
 
 ```python
 state = {
