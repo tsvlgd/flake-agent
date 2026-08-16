@@ -34,4 +34,4 @@ If time allows in weeks 10 and 11, an exporter that anonymizes resolved log trac
 
 ## Further detail
 
-Full architectural decision records, including the reasoning and trade-offs behind each choice above, are in the accompanying DECISIONS.md. A visual system topology diagram covering the ingestion, parsing, and agentic-triage layers is provided separately.
+Full architectural decision records, including the reasoning and trade-offs behind each choice above, are in the accompanying [DECISIONS.md](https://github.com/tsvlgd/flake-agent/blob/main/docs/DECISIONS.md). A visual system topology diagram covering the ingestion, parsing, and agentic-triage layers is provided separately.
